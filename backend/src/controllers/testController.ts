@@ -103,3 +103,41 @@ export const deleteTest = async (req: AuthRequest, res: Response) => {
         res.status(500).json({ message: 'Помилка при видаленні тесту', error });
     }
 };
+
+// Додаємо в кінець файлу testController.ts
+export const getTestStats = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const creator_id = req.user?.id;
+
+        // 1. Перевіряємо, чи існує тест і чи належить він цьому автору
+        const test = await db('tests').where({ id, creator_id }).first();
+        if (!test) {
+            return res.status(403).json({ message: 'Доступ заборонено або тест не знайдено' });
+        }
+
+        // 2. Отримуємо всі завершені спроби для цього тесту
+        const attempts = await db('test_attempts')
+            .leftJoin('users', 'test_attempts.user_id', 'users.id')
+            .where({ test_id: id })
+            .whereNotNull('finished_at') // Беремо тільки ті, що завершилися
+            .select(
+                'test_attempts.id',
+                'test_attempts.score',
+                'test_attempts.max_score',
+                'test_attempts.finished_at',
+                'test_attempts.guest_first_name',
+                'test_attempts.guest_last_name',
+                'users.first_name as user_first_name',
+                'users.last_name as user_last_name'
+            )
+            .orderBy('finished_at', 'desc');
+
+        res.json({
+            test_title: test.title,
+            attempts
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Помилка при отриманні статистики', error });
+    }
+};

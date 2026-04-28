@@ -124,3 +124,55 @@ export const submitAttempt = async (req: AuthRequest, res: Response) => {
         res.status(500).json({ message: 'Помилка при збереженні результатів', error });
     }
 };
+
+export const getAttemptResult = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+
+        // 1. Отримуємо спробу
+        const attempt = await db('test_attempts').where({ id }).first();
+        if (!attempt) {
+            return res.status(404).json({ message: 'Результати не знайдено' });
+        }
+
+        // 2. Отримуємо інформацію про тест
+        const test = await db('tests').where({ id: attempt.test_id }).first();
+
+        // 3. Отримуємо всі запитання для цього тесту
+        const questions = await db('questions').where({ test_id: test.id }).orderBy('position', 'asc');
+
+        // 4. Отримуємо відповіді користувача
+        const attemptAnswers = await db('attempt_answers').where({ attempt_id: id });
+
+        // 5. Отримуємо всі варіанти відповідей
+        const options = await db('options').whereIn('question_id', questions.map(q => q.id));
+
+        // 6. Формуємо детальний масив для фронтенду
+        const detailedQuestions = questions.map(q => {
+            // Шукаємо, що відповів користувач
+            const userAnswerRecord = attemptAnswers.find(a => a.question_id === q.id);
+            const userAnswer = options.find(o => o.id === userAnswerRecord?.option_id);
+
+            // Шукаємо правильну відповідь
+            const correctAnswer = options.find(o => o.question_id === q.id && o.is_correct);
+
+            return {
+                id: q.id,
+                content: q.content,
+                is_correct: userAnswer?.id === correctAnswer?.id,
+                user_answer: userAnswer ? userAnswer.content : 'Немає відповіді',
+                correct_answer: correctAnswer ? correctAnswer.content : 'Не вказано'
+            };
+        });
+
+        res.json({
+            score: attempt.score,
+            max_score: attempt.max_score,
+            test_title: test.title,
+            questions: detailedQuestions
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: 'Помилка при отриманні результатів', error });
+    }
+};
