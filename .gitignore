@@ -1,0 +1,27 @@
+# Специфічні файли IDE (зокрема WebStorm)
+.idea/
+*.iml
+
+# Файли залежностей Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Зібраний код та білди
+dist/
+build/
+
+# Файли з секретними змінними середовища
+.env
+.env.*.local
+*.pem
+
+# Системні файли ОС
+.DS_Store
+Thumbs.db
+
+# Логи бази даних та інше
+*.log
+coverage/

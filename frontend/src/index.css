@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+@theme {
+  /* Додаємо наші кастомні кольори */
+  --color-brand-green: #2b8a5d; /* Основний зелений з твоїх кнопок */
+  --color-brand-green-hover: #226f4a;
+  --color-brand-dark: #1e1e1e; /* Темний фон карток */
+  --color-brand-darker: #151515; /* Найтемніший фон сторінки */
+  --color-brand-text: #e0e0e0; /* Світло-сірий для тексту */
+  --color-correct-bg: #d1fae5; /* Світло-зелений фон для правильної відповіді */
+  --color-correct-text: #065f46;
+  --color-wrong-bg: #fee2e2; /* Світло-червоний для неправильної */
+  --color-wrong-text: #991b1b;
+}
+
+body {
+  @apply bg-brand-darker text-brand-text font-sans antialiased;
+}

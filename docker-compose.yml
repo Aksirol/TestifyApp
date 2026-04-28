@@ -1,0 +1,56 @@
+services:
+  # 1. База даних PostgreSQL
+  db:
+    image: postgres:16-alpine
+    container_name: testify_db
+    restart: always
+    env_file:
+      - .env
+    ports:
+      # Використовуємо порт з .env файлу (5433), щоб не заважати локальному Postgres
+      - "${DB_LOCAL_PORT}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Backend (Express API)
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: testify_api
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 3. Frontend (React SPA)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: testify_frontend
+    restart: always
+
+  # 4. Nginx (Reverse Proxy)
+  nginx:
+    image: nginx:alpine
+    container_name: testify_nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+      - frontend
+
+# Зберігаємо дані БД, щоб вони не зникали при перезапуску контейнерів
+volumes:
+  db_data:

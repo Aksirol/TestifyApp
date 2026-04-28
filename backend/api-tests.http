@@ -1,0 +1,56 @@
+### 1. Перевірка статусу сервера
+GET http://localhost:5000/api/health
+Accept: application/json
+
+### 2. Реєстрація нового користувача
+POST http://localhost:5000/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "password123",
+  "first_name": "Марія",
+  "last_name": "Шевченко"
+}
+
+### 3. Логін (отримання токена)
+# @name loginRequest
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "password123"
+}
+
+> {%
+    // Магія WebStorm: автоматично зберігаємо токен з відповіді для наступних запитів!
+    client.global.set("auth_token", response.body.token);
+%}
+
+### 4. Створення нового тесту (з використанням збереженого токена)
+POST http://localhost:5000/api/tests
+Content-Type: application/json
+Authorization: Bearer {{auth_token}}
+
+{
+  "title": "Основи алгоритмів",
+  "description": "Тестове завдання для перевірки API",
+  "is_public": true,
+  "time_limit_sec": 600,
+  "show_correct": true,
+  "questions": [
+    {
+      "content": "Яка складність алгоритму сортування злиттям?",
+      "options": [
+        { "content": "O(n^2)", "is_correct": false },
+        { "content": "O(n log n)", "is_correct": true },
+        { "content": "O(n)", "is_correct": false }
+      ]
+    }
+  ]
+}
+
+### 5. Отримання списку публічних тестів
+GET http://localhost:5000/api/tests
+Authorization: Bearer {{auth_token}}
