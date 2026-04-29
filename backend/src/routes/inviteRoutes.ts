@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { getTestInfoByInviteCode } from '../controllers/inviteController';
+import { optionalAuthenticateToken } from '../middleware/authMiddleware';
 
 const router = Router();
 
-// Обробляє GET-запити за шляхом /api/invite/:code
-router.get('/:code', getTestInfoByInviteCode);
+// optionalAuthenticateToken має бути першим, щоб контролер знав про юзера
+router.get('/:code', optionalAuthenticateToken, getTestInfoByInviteCode);
 
 export default router;

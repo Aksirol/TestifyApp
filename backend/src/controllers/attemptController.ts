@@ -37,7 +37,12 @@ export const startAttempt = async (req: AuthRequest, res: Response) => {
             q.options = options;
         }
 
-        res.status(201).json({ attempt, questions });
+        res.status(201).json({
+            attempt,
+            questions,
+            test_title: test.title,
+            time_limit_sec: test.time_limit_sec
+        });
     } catch (error) {
         res.status(500).json({ message: 'Помилка при початку тесту', error });
     }
@@ -174,5 +179,25 @@ export const getAttemptResult = async (req: AuthRequest, res: Response) => {
 
     } catch (error) {
         res.status(500).json({ message: 'Помилка при отриманні результатів', error });
+    }
+};
+
+export const getMyAttempts = async (req: AuthRequest, res: Response) => {
+    try {
+        const user_id = req.user?.id;
+        if (!user_id) {
+            return res.status(401).json({ message: 'Необхідна авторизація' });
+        }
+
+        // Шукаємо всі спроби цього користувача та приєднуємо назву тесту
+        const attempts = await db('test_attempts')
+            .join('tests', 'test_attempts.test_id', 'tests.id')
+            .where({ 'test_attempts.user_id': user_id })
+            .select('test_attempts.*', 'tests.title as test_title')
+            .orderBy('test_attempts.started_at', 'desc');
+
+        res.json(attempts);
+    } catch (error) {
+        res.status(500).json({ message: 'Помилка при отриманні історії спроб', error });
     }
 };

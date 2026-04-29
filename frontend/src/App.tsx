@@ -7,6 +7,7 @@ import TakeTest from './pages/TakeTest';
 import Results from './pages/Results';
 import MyTests from './pages/MyTests';
 import TestStats from './pages/TestStats';
+import ProcessInvite from "./pages/ProcessInvite.tsx";
 
 function App() {
     return (
@@ -59,6 +60,8 @@ function App() {
                 } />
 
                 <Route path="/" element={<Navigate to="/tests" replace />} />
+
+                <Route path="/invite/:inviteCode" element={<ProcessInvite />} />
             </Routes>
         </div>
     );
