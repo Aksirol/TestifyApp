@@ -84,26 +84,6 @@ export const getMyTests = async (req: AuthRequest, res: Response) => {
     }
 };
 
-export const deleteTest = async (req: AuthRequest, res: Response) => {
-    try {
-        const { id } = req.params;
-        const creator_id = req.user?.id;
-
-        // Видаляємо лише якщо користувач є автором
-        const deletedCount = await db('tests')
-            .where({ id, creator_id })
-            .delete();
-
-        if (deletedCount === 0) {
-            return res.status(403).json({ message: 'Ви не маєте прав на видалення цього тесту' });
-        }
-
-        res.json({ message: 'Тест успішно видалено' });
-    } catch (error) {
-        res.status(500).json({ message: 'Помилка при видаленні тесту', error });
-    }
-};
-
 // Додаємо в кінець файлу testController.ts
 export const getTestStats = async (req: AuthRequest, res: Response) => {
     try {
@@ -178,26 +158,35 @@ export const updateTest = async (req: AuthRequest, res: Response) => {
             return res.status(403).json({ message: 'Ви не маєте прав на редагування цього тесту' });
         }
 
-        // 2. Оновлюємо базову інформацію тесту
+        // 2. Оновлюємо базову інформацію тесту (додано обробку тегів)
         const invite_code = is_public ? null : (test.invite_code || uuidv4());
         await trx('tests').where({ id }).update({
-            title, description, is_public, time_limit_sec, show_correct, invite_code, tags: tags || [] // Додали сюди
+            title, description, is_public, time_limit_sec, show_correct, invite_code, tags: tags || []
         });
 
-        // 3. Щоб не робити складне порівняння, ми просто видаляємо старі запитання і записуємо нові.
-        // Оскільки структура тесту змінюється, ми також очищаємо стару статистику проходжень.
-        await trx('test_attempts').where({ test_id: id }).delete();
+        // ПРАВИЛЬНИЙ ПОРЯДОК ВИДАЛЕННЯ СТАРИХ ДАНИХ (знизу-вгору)
 
+        // 3. Знаходимо всі спроби проходження цього тесту
+        const attempts = await trx('test_attempts').where({ test_id: id }).select('id');
+        const attemptIds = attempts.map(a => a.id);
+
+        // Якщо тест хтось проходив, спочатку видаляємо їхні відповіді, а потім самі спроби
+        if (attemptIds.length > 0) {
+            await trx('attempt_answers').whereIn('attempt_id', attemptIds).delete();
+            await trx('test_attempts').where({ test_id: id }).delete();
+        }
+
+        // 4. Знаходимо всі старі запитання
         const oldQuestions = await trx('questions').where({ test_id: id }).select('id');
         const oldQuestionIds = oldQuestions.map(q => q.id);
 
+        // Видаляємо старі варіанти відповідей, а потім самі запитання
         if (oldQuestionIds.length > 0) {
-            await trx('attempt_answers').whereIn('question_id', oldQuestionIds).delete();
             await trx('options').whereIn('question_id', oldQuestionIds).delete();
             await trx('questions').where({ test_id: id }).delete();
         }
 
-        // 4. Записуємо нові запитання
+        // 5. Записуємо нові запитання
         if (questions && Array.isArray(questions)) {
             for (const [qIdx, q] of questions.entries()) {
                 const [question] = await trx('questions').insert({
@@ -218,5 +207,47 @@ export const updateTest = async (req: AuthRequest, res: Response) => {
     } catch (error) {
         await trx.rollback();
         res.status(500).json({ message: 'Помилка при оновленні тесту', error });
+    }
+};
+
+export const deleteTest = async (req: AuthRequest, res: Response) => {
+    const trx = await db.transaction();
+    try {
+        const { id } = req.params;
+        const creator_id = req.user?.id;
+
+        // 1. Перевіряємо, чи існує тест і чи належить він автору
+        const test = await trx('tests').where({ id, creator_id }).first();
+        if (!test) {
+            await trx.rollback();
+            return res.status(403).json({ message: 'Ви не маєте прав на видалення цього тесту' });
+        }
+
+        // ПРАВИЛЬНИЙ ПОРЯДОК ВИДАЛЕННЯ СТАРИХ ДАНИХ (знизу-вгору)
+
+        // 2. Видаляємо відповіді та спроби учасників
+        const attempts = await trx('test_attempts').where({ test_id: id }).select('id');
+        const attemptIds = attempts.map(a => a.id);
+        if (attemptIds.length > 0) {
+            await trx('attempt_answers').whereIn('attempt_id', attemptIds).delete();
+            await trx('test_attempts').where({ test_id: id }).delete();
+        }
+
+        // 3. Видаляємо варіанти та запитання
+        const questions = await trx('questions').where({ test_id: id }).select('id');
+        const questionIds = questions.map(q => q.id);
+        if (questionIds.length > 0) {
+            await trx('options').whereIn('question_id', questionIds).delete();
+            await trx('questions').where({ test_id: id }).delete();
+        }
+
+        // 4. І лише тепер безпечно видаляємо сам тест
+        await trx('tests').where({ id }).delete();
+
+        await trx.commit();
+        res.json({ message: 'Тест успішно видалено' });
+    } catch (error) {
+        await trx.rollback();
+        res.status(500).json({ message: 'Помилка при видаленні тесту', error });
     }
 };

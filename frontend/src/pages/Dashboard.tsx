@@ -35,15 +35,13 @@ export default function Dashboard() {
 
     const isLoading = isLoadingMy || isLoadingPublic;
 
-    // НОВЕ: Функція копіювання інвайт-коду
+    // Функція копіювання інвайт-коду
     const copyInviteLink = (inviteCode?: string) => {
         if (!inviteCode) return;
         const link = `${window.location.origin}/invite/${inviteCode}`;
         navigator.clipboard.writeText(link);
         alert('Посилання скопійовано в буфер обміну!');
     };
-
-    if (isLoading) return <div className="text-center mt-20 text-gray-400">Завантаження...</div>;
 
     if (isLoading) return <div className="text-center mt-20 text-gray-400">Завантаження...</div>;
 
@@ -62,12 +60,24 @@ export default function Dashboard() {
                             myTests?.map((test) => (
                                 <div key={test.id} className="bg-[#1e1e1e] border border-[#2a2a2a] rounded-xl p-5 hover:border-[#3a3a3a] transition-colors">
                                     <h3 className="text-lg font-medium text-white mb-3">{test.title}</h3>
-                                    <div className="flex items-center gap-3 text-sm text-gray-400 mb-4">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${test.is_public ? 'bg-brand-green/20 text-brand-green' : 'bg-gray-700 text-gray-300'}`}>
-                      {test.is_public ? 'Публічний' : 'Приватний'}
-                    </span>
+                                    <div className="flex items-center gap-3 text-sm text-gray-400 mb-2">
+                                        <span className={`px-2 py-1 rounded text-xs font-medium ${test.is_public ? 'bg-brand-green/20 text-brand-green' : 'bg-gray-700 text-gray-300'}`}>
+                                            {test.is_public ? 'Публічний' : 'Приватний'}
+                                        </span>
                                         {test.time_limit_sec && <span>{Math.round(test.time_limit_sec / 60)} хв</span>}
                                     </div>
+
+                                    {/* ДОДАНО: Відображення тегів для моїх тестів */}
+                                    {test.tags && test.tags.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 mb-4">
+                                            {test.tags.map(tag => (
+                                                <span key={tag} className="bg-brand-green/10 text-brand-green border border-brand-green/20 px-2.5 py-0.5 rounded-full text-xs font-medium">
+                                                    #{tag}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+
                                     <div className="flex flex-wrap gap-2">
                                         <Link
                                             to={`/tests/edit/${test.id}`}
@@ -106,11 +116,23 @@ export default function Dashboard() {
                             publicTests?.map((test) => (
                                 <div key={test.id} className="bg-[#1e1e1e] border border-[#2a2a2a] rounded-xl p-5 hover:border-[#3a3a3a] transition-colors">
                                     <h3 className="text-lg font-medium text-white mb-2">{test.title}</h3>
+
+                                    {/* ДОДАНО: Відображення тегів для публічних тестів */}
+                                    {test.tags && test.tags.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 mb-3">
+                                            {test.tags.map(tag => (
+                                                <span key={tag} className="bg-brand-green/10 text-brand-green border border-brand-green/20 px-2.5 py-0.5 rounded-full text-xs font-medium">
+                                                    #{tag}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+
                                     <p className="text-sm text-gray-400 mb-5">
                                         {test.questions_count} запитань
                                     </p>
                                     <Link
-                                        to={`/attempt/${test.id}`} // Згодом ми поправимо роут на сторінку початку тесту
+                                        to={`/attempt/${test.id}`}
                                         className="inline-block bg-brand-green hover:bg-brand-green-hover text-white px-4 py-2 rounded-md font-medium transition-colors text-sm"
                                     >
                                         Пройти
