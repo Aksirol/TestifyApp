@@ -4,11 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
     "migrate:up": "knex migrate:latest --knexfile src/knexfile.ts",
-    "migrate:down": "knex migrate:rollback --knexfile src/knexfile.ts"
+    "migrate:down": "knex migrate:rollback --knexfile src/knexfile.ts",
+    "seed": "knex seed:run --knexfile src/knexfile.ts",
+    "migrate:make": "knex migrate:make --knexfile src/knexfile.ts -x ts"
   },
   "keywords": [],
   "author": "",

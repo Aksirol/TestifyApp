@@ -8,9 +8,8 @@ export const createTest = async (req: AuthRequest, res: Response) => {
     const trx = await db.transaction();
 
     try {
-        const { title, description, is_public, time_limit_sec, show_correct, questions } = req.body;
+        const { title, description, is_public, time_limit_sec, show_correct, questions, tags } = req.body;
         const creator_id = req.user?.id;
-
         // 1. Створюємо запис у таблиці TESTS
         // Якщо тест приватний, генеруємо унікальний invite_code
         const invite_code = is_public ? null : uuidv4();
@@ -22,7 +21,8 @@ export const createTest = async (req: AuthRequest, res: Response) => {
             is_public,
             time_limit_sec,
             show_correct,
-            invite_code
+            invite_code,
+            tags: tags || []
         }).returning('*');
 
         // 2. Якщо в запиті є запитання, зберігаємо їх
@@ -139,5 +139,84 @@ export const getTestStats = async (req: AuthRequest, res: Response) => {
         });
     } catch (error) {
         res.status(500).json({ message: 'Помилка при отриманні статистики', error });
+    }
+};
+
+// Отримання тесту з усіма запитаннями для редактора
+export const getTestById = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const creator_id = req.user?.id;
+
+        const test = await db('tests').where({ id, creator_id }).first();
+        if (!test) return res.status(404).json({ message: 'Тест не знайдено або доступ заборонено' });
+
+        const questions = await db('questions').where({ test_id: test.id }).orderBy('position', 'asc');
+
+        for (let q of questions) {
+            q.options = await db('options').where({ question_id: q.id }).orderBy('position', 'asc');
+        }
+
+        res.json({ ...test, questions });
+    } catch (error) {
+        res.status(500).json({ message: 'Помилка при отриманні тесту', error });
+    }
+};
+
+// Оновлення існуючого тесту
+export const updateTest = async (req: AuthRequest, res: Response) => {
+    const trx = await db.transaction();
+    try {
+        const { id } = req.params;
+        const creator_id = req.user?.id;
+        const { title, description, is_public, time_limit_sec, show_correct, questions, tags } = req.body;
+
+        // 1. Перевіряємо, чи належить тест користувачу
+        const test = await trx('tests').where({ id, creator_id }).first();
+        if (!test) {
+            await trx.rollback();
+            return res.status(403).json({ message: 'Ви не маєте прав на редагування цього тесту' });
+        }
+
+        // 2. Оновлюємо базову інформацію тесту
+        const invite_code = is_public ? null : (test.invite_code || uuidv4());
+        await trx('tests').where({ id }).update({
+            title, description, is_public, time_limit_sec, show_correct, invite_code, tags: tags || [] // Додали сюди
+        });
+
+        // 3. Щоб не робити складне порівняння, ми просто видаляємо старі запитання і записуємо нові.
+        // Оскільки структура тесту змінюється, ми також очищаємо стару статистику проходжень.
+        await trx('test_attempts').where({ test_id: id }).delete();
+
+        const oldQuestions = await trx('questions').where({ test_id: id }).select('id');
+        const oldQuestionIds = oldQuestions.map(q => q.id);
+
+        if (oldQuestionIds.length > 0) {
+            await trx('attempt_answers').whereIn('question_id', oldQuestionIds).delete();
+            await trx('options').whereIn('question_id', oldQuestionIds).delete();
+            await trx('questions').where({ test_id: id }).delete();
+        }
+
+        // 4. Записуємо нові запитання
+        if (questions && Array.isArray(questions)) {
+            for (const [qIdx, q] of questions.entries()) {
+                const [question] = await trx('questions').insert({
+                    test_id: id, content: q.content, position: qIdx + 1
+                }).returning('*');
+
+                if (q.options && Array.isArray(q.options)) {
+                    const optionsToInsert = q.options.map((opt: any, oIdx: number) => ({
+                        question_id: question.id, content: opt.content, is_correct: opt.is_correct, position: oIdx + 1
+                    }));
+                    await trx('options').insert(optionsToInsert);
+                }
+            }
+        }
+
+        await trx.commit();
+        res.json({ message: 'Тест успішно оновлено' });
+    } catch (error) {
+        await trx.rollback();
+        res.status(500).json({ message: 'Помилка при оновленні тесту', error });
     }
 };

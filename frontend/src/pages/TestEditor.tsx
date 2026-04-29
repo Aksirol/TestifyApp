@@ -1,11 +1,10 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { Trash2, Plus } from 'lucide-react';
 import Header from '../components/Header';
 
-// Описуємо структуру наших даних
 interface OptionState {
     content: string;
     is_correct: boolean;
@@ -18,39 +17,63 @@ interface QuestionState {
 
 export default function TestEditor() {
     const navigate = useNavigate();
+    const { testId } = useParams();
+    const isEditMode = !!testId;
 
-    // 1. СТАН ТЕСТУ (Налаштування)
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [isPublic, setIsPublic] = useState(false);
     const [showCorrect, setShowCorrect] = useState(false);
-
-    // Для часу використовуємо допоміжний стан: чи ввімкнено обмеження, і скільки хвилин
     const [hasTimeLimit, setHasTimeLimit] = useState(false);
     const [timeMinutes, setTimeMinutes] = useState(10);
+    const [tags, setTags] = useState<string[]>([]);
+    const [tagInput, setTagInput] = useState('');
 
-    // 2. СТАН ЗАПИТАНЬ (Динамічний масив)
     const [questions, setQuestions] = useState<QuestionState[]>([
-        {
-            content: '',
-            options: [
-                { content: '', is_correct: true }, // За замовчуванням один правильний
-                { content: '', is_correct: false },
-            ],
-        },
+        { content: '', options: [{ content: '', is_correct: true }, { content: '', is_correct: false }] },
     ]);
 
-    // --- ЛОГІКА ДЛЯ ЗАПИТАНЬ ---
-    const addQuestion = () => {
-        setQuestions([
-            ...questions,
-            { content: '', options: [{ content: '', is_correct: true }, { content: '', is_correct: false }] },
-        ]);
-    };
+    // ВИПРАВЛЕНО: Прибрали onSuccess, використовуємо useEffect
+    const { data: testData, isLoading: isFetching } = useQuery({
+        queryKey: ['testData', testId],
+        queryFn: async () => {
+            const res = await apiClient.get(`/tests/${testId}`);
+            return res.data;
+        },
+        enabled: isEditMode,
+    });
 
-    const removeQuestion = (qIndex: number) => {
-        setQuestions(questions.filter((_, i) => i !== qIndex));
-    };
+    // ВИПРАВЛЕНО: Слідкуємо за завантаженими даними та оновлюємо стан
+    useEffect(() => {
+        if (testData) {
+            setTitle(testData.title);
+            setDescription(testData.description || '');
+            setIsPublic(testData.is_public);
+            setShowCorrect(testData.show_correct);
+
+            if (testData.tags) {
+                setTags(testData.tags);
+            }
+
+            if (testData.time_limit_sec) {
+                setHasTimeLimit(true);
+                setTimeMinutes(Math.round(testData.time_limit_sec / 60));
+            }
+
+            if (testData.questions && testData.questions.length > 0) {
+                setQuestions(testData.questions.map((q: any) => ({
+                    content: q.content,
+                    options: q.options.map((opt: any) => ({
+                        content: opt.content,
+                        is_correct: opt.is_correct
+                    }))
+                })));
+            }
+        }
+    }, [testData]);
+
+    const addQuestion = () => setQuestions([...questions, { content: '', options: [{ content: '', is_correct: true }, { content: '', is_correct: false }] }]);
+    const removeQuestion = (qIndex: number) => setQuestions(questions.filter((_, i) => i !== qIndex));
 
     const updateQuestionContent = (qIndex: number, content: string) => {
         const newQs = [...questions];
@@ -58,7 +81,24 @@ export default function TestEditor() {
         setQuestions(newQs);
     };
 
-    // --- ЛОГІКА ДЛЯ ВАРІАНТІВ ---
+    // Обробка вводу тегів
+    const handleAddTag = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault(); // Забороняємо формі відправлятись при натисканні Enter
+            const newTag = tagInput.trim().toLowerCase();
+
+            // Запобігаємо дублікатам
+            if (newTag && !tags.includes(newTag)) {
+                setTags([...tags, newTag]);
+            }
+            setTagInput('');
+        }
+    };
+
+    const removeTag = (tagToRemove: string) => {
+        setTags(tags.filter(tag => tag !== tagToRemove));
+    };
+
     const addOption = (qIndex: number) => {
         const newQs = [...questions];
         newQs[qIndex].options.push({ content: '', is_correct: false });
@@ -73,48 +113,59 @@ export default function TestEditor() {
 
     const setCorrectOption = (qIndex: number, correctOIndex: number) => {
         const newQs = [...questions];
-        // Робимо всі варіанти в цьому запитанні неправильними...
-        newQs[qIndex].options.forEach((opt, idx) => {
-            opt.is_correct = idx === correctOIndex; // ...крім того, який обрав користувач
-        });
+        newQs[qIndex].options.forEach((opt, idx) => { opt.is_correct = idx === correctOIndex; });
         setQuestions(newQs);
     };
 
-    // --- ВІДПРАВКА НА СЕРВЕР ---
-    const createTestMutation = useMutation({
+    const saveTestMutation = useMutation({
         mutationFn: async (testData: any) => {
-            const res = await apiClient.post('/tests', testData);
-            return res.data;
+            if (isEditMode) {
+                return await apiClient.put(`/tests/${testId}`, testData);
+            } else {
+                return await apiClient.post('/tests', testData);
+            }
         },
-        onSuccess: () => {
-            // Якщо успішно зберегли, повертаємось на головну
-            navigate('/tests');
-        },
+        onSuccess: () => navigate('/tests/my'),
     });
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Формуємо фінальний об'єкт для нашого бекенду
+        const validQuestions = questions.filter(q => q.content.trim() !== '');
+        if (validQuestions.length === 0) {
+            alert('Будь ласка, додайте щонайменше одне запитання.');
+            return;
+        }
+
+        if (isEditMode) {
+            const confirmed = window.confirm('Увага: редагування тесту повністю скине його попередню статистику проходжень. Ви впевнені, що хочете продовжити?');
+            if (!confirmed) return;
+        }
+
         const finalData = {
             title,
             description,
             is_public: isPublic,
             show_correct: showCorrect,
-            // Переводимо хвилини в секунди, якщо обмеження ввімкнено
             time_limit_sec: hasTimeLimit ? timeMinutes * 60 : null,
-            questions,
+            questions: validQuestions,
+            tags,
         };
 
-        createTestMutation.mutate(finalData);
+        saveTestMutation.mutate(finalData);
     };
+
+    if (isFetching) return <><Header /><div className="text-center mt-20 text-gray-400">Завантаження тесту...</div></>;
 
     return (
         <>
             <Header />
             <div className="pb-20">
                 <div className="flex items-center justify-between mb-6">
-                    <h1 className="text-2xl font-bold text-white">Новий тест</h1>
+                    {/* ВИПРАВЛЕНО: Динамічний заголовок */}
+                    <h1 className="text-2xl font-bold text-white">
+                        {isEditMode ? 'Редагування тесту' : 'Новий тест'}
+                    </h1>
                     <div className="flex gap-4">
                         <button
                             type="button"
@@ -123,17 +174,22 @@ export default function TestEditor() {
                         >
                             Скасувати
                         </button>
+                        {/* ВИПРАВЛЕНО: Замінили createTestMutation на saveTestMutation */}
                         <button
                             onClick={handleSubmit}
-                            disabled={createTestMutation.isPending}
+                            disabled={saveTestMutation.isPending}
                             className="bg-brand-green hover:bg-brand-green-hover text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50"
                         >
-                            {createTestMutation.isPending ? 'Збереження...' : 'Зберегти тест'}
+                            {saveTestMutation.isPending
+                                ? 'Збереження...'
+                                : (isEditMode ? 'Оновити тест' : 'Зберегти тест')
+                            }
                         </button>
                     </div>
                 </div>
 
-                {createTestMutation.isError && (
+                {/* ВИПРАВЛЕНО: Замінили createTestMutation на saveTestMutation */}
+                {saveTestMutation.isError && (
                     <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-4 rounded-lg mb-6">
                         Помилка при збереженні тесту. Перевірте всі поля.
                     </div>
@@ -156,6 +212,32 @@ export default function TestEditor() {
                             </div>
                             <div>
                                 <label className="block text-sm text-gray-400 mb-1">Опис (необов'язково)</label>
+                                {/* БЛОК ДЛЯ ТЕГІВ */}
+                                <div>
+                                    <label className="block text-sm text-gray-400 mb-2">Теги (натисніть Enter або кому, щоб додати)</label>
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        {tags.map(tag => (
+                                            <span key={tag} className="bg-[#2a2a2a] text-gray-300 px-3 py-1.5 rounded-md text-sm flex items-center gap-2 border border-[#3a3a3a]">
+                                            #{tag}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeTag(tag)}
+                                                    className="text-gray-500 hover:text-red-400 transition-colors"
+                                                >
+                                                &times;
+                                            </button>
+                                        </span>
+                                        ))}
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={tagInput}
+                                        onChange={(e) => setTagInput(e.target.value)}
+                                        onKeyDown={handleAddTag}
+                                        placeholder="Наприклад: математика, 10 клас, алгоритми"
+                                        className="w-full bg-[#151515] border border-[#333] rounded-lg px-4 py-2 text-white focus:outline-none focus:border-brand-green"
+                                    />
+                                </div>
                                 <textarea
                                     value={description}
                                     onChange={(e) => setDescription(e.target.value)}
@@ -258,7 +340,6 @@ export default function TestEditor() {
                                                 opt.is_correct ? 'border-brand-green bg-brand-green/10' : 'border-[#333] bg-[#151515]'
                                             }`}
                                         >
-                                            {/* Радіокнопка для вибору правильної відповіді */}
                                             <button
                                                 type="button"
                                                 onClick={() => setCorrectOption(qIndex, oIndex)}
@@ -279,8 +360,8 @@ export default function TestEditor() {
 
                                             {opt.is_correct && (
                                                 <span className="text-brand-green text-sm pr-2 whitespace-nowrap flex items-center gap-1">
-                          <Check size={16} /> правильна
-                        </span>
+                                                    <Check size={16} /> правильна
+                                                </span>
                                             )}
                                         </div>
                                     ))}
@@ -308,7 +389,6 @@ export default function TestEditor() {
     );
 }
 
-// Допоміжний компонент іконки (щоб не тягнути зайвого, якщо не встановлено lucide повністю)
 function Check({ size }: { size: number }) {
     return (
         <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

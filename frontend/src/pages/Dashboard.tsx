@@ -10,6 +10,8 @@ interface Test {
     is_public: boolean;
     time_limit_sec: number | null;
     questions_count: number;
+    invite_code?: string;
+    tags?: string[];
 }
 
 export default function Dashboard() {
@@ -32,6 +34,16 @@ export default function Dashboard() {
     });
 
     const isLoading = isLoadingMy || isLoadingPublic;
+
+    // НОВЕ: Функція копіювання інвайт-коду
+    const copyInviteLink = (inviteCode?: string) => {
+        if (!inviteCode) return;
+        const link = `${window.location.origin}/invite/${inviteCode}`;
+        navigator.clipboard.writeText(link);
+        alert('Посилання скопійовано в буфер обміну!');
+    };
+
+    if (isLoading) return <div className="text-center mt-20 text-gray-400">Завантаження...</div>;
 
     if (isLoading) return <div className="text-center mt-20 text-gray-400">Завантаження...</div>;
 
@@ -56,15 +68,24 @@ export default function Dashboard() {
                     </span>
                                         {test.time_limit_sec && <span>{Math.round(test.time_limit_sec / 60)} хв</span>}
                                     </div>
-                                    <div className="flex gap-2">
-                                        <button className="px-3 py-1.5 text-sm border border-[#333] rounded-md text-gray-300 hover:text-white hover:bg-[#2a2a2a] transition-colors">
+                                    <div className="flex flex-wrap gap-2">
+                                        <Link
+                                            to={`/tests/edit/${test.id}`}
+                                            className="px-3 py-1.5 text-sm border border-[#333] rounded-md text-gray-300 hover:text-white hover:bg-[#2a2a2a] transition-colors"
+                                        >
                                             Редагувати
-                                        </button>
-                                        <button className="px-3 py-1.5 text-sm border border-[#333] rounded-md text-gray-300 hover:text-white hover:bg-[#2a2a2a] transition-colors">
+                                        </Link>
+                                        <Link
+                                            to={`/tests/${test.id}/stats`}
+                                            className="px-3 py-1.5 text-sm border border-[#333] rounded-md text-gray-300 hover:text-white hover:bg-[#2a2a2a] transition-colors"
+                                        >
                                             Статистика
-                                        </button>
-                                        {!test.is_public && (
-                                            <button className="px-3 py-1.5 text-sm border border-[#333] rounded-md text-gray-300 hover:text-white hover:bg-[#2a2a2a] transition-colors">
+                                        </Link>
+                                        {!test.is_public && test.invite_code && (
+                                            <button
+                                                onClick={() => copyInviteLink(test.invite_code)}
+                                                className="px-3 py-1.5 text-sm border border-[#333] rounded-md text-gray-300 hover:text-white hover:bg-[#2a2a2a] transition-colors"
+                                            >
                                                 Копіювати посилання
                                             </button>
                                         )}

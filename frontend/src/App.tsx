@@ -52,6 +52,12 @@ function App() {
                     </main>
                 } />
 
+                <Route path="/tests/edit/:testId" element={
+                    <main className="container mx-auto px-4 max-w-4xl">
+                        <TestEditor />
+                    </main>
+                } />
+
                 <Route path="/" element={<Navigate to="/tests" replace />} />
             </Routes>
         </div>
