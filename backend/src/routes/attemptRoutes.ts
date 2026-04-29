@@ -4,16 +4,14 @@ import { optionalAuthenticateToken, authenticateToken } from '../middleware/auth
 
 const router = Router();
 
-// Отримання результатів за ID (публічно)
-router.get('/:id', getAttemptResult);
-
-// Історія (тільки для юзерів)
+// 1. КОНКРЕТНІ маршрути (завжди зверху!)
 router.get('/my', authenticateToken, getMyAttempts);
 
-// Початок тесту (і для гостей, і для юзерів)
-router.post('/', optionalAuthenticateToken, startAttempt);
+// 2. ДИНАМІЧНІ маршрути (з параметрами :id)
+router.get('/:id', getAttemptResult);
 
-// Завершення (публічно)
+// 3. Інші дії
+router.post('/', optionalAuthenticateToken, startAttempt);
 router.put('/:id/submit', submitAttempt);
 
 export default router;

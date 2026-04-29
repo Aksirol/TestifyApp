@@ -5,38 +5,34 @@ import db from '../db/knex';
 export const startAttempt = async (req: AuthRequest, res: Response) => {
     try {
         const { test_id, guest_first_name, guest_last_name } = req.body;
-        const user_id = req.user?.id || null; // Якщо токена немає, буде null (гість)
+        const user_id = req.user?.id || null;
 
-        // 1. Перевіряємо, чи існує тест
         const test = await db('tests').where({ id: test_id }).first();
-        if (!test) {
-            return res.status(404).json({ message: 'Тест не знайдено' });
-        }
+        if (!test) return res.status(404).json({ message: 'Тест не знайдено' });
 
-        // 2. Створюємо запис про нову спробу
         const [attempt] = await db('test_attempts').insert({
             test_id,
             user_id,
             guest_first_name: user_id ? null : guest_first_name,
             guest_last_name: user_id ? null : guest_last_name,
-            // started_at встановиться автоматично завдяки базі даних
         }).returning('*');
 
-        // 3. Дістаємо запитання
-        const questions = await db('questions')
-            .where({ test_id })
-            .orderBy('position', 'asc');
+        const questions = await db('questions').where({ test_id }).orderBy('position', 'asc');
+        const questionIds = questions.map(q => q.id);
 
-        // 4. Дістаємо варіанти відповідей (БЕЗ поля is_correct, щоб уникнути шахрайства)
+        // ВИПРАВЛЕНО N+1: Отримуємо всі варіанти ОДНИМ запитом замість циклу
+        const allOptions = questionIds.length > 0
+            ? await db('options')
+                .whereIn('question_id', questionIds)
+                .select('id', 'question_id', 'content', 'position')
+                .orderBy('position', 'asc')
+            : [];
+
         for (let q of questions) {
-            const options = await db('options')
-                .where({ question_id: q.id })
-                .select('id', 'content', 'position') // Зверни увагу: is_correct тут немає!
-                .orderBy('position', 'asc');
-
-            q.options = options;
+            q.options = allOptions.filter(opt => opt.question_id === q.id);
         }
 
+        // ВИПРАВЛЕНО БАГ 3: Повертаємо таймер та назву тесту на фронтенд
         res.status(201).json({
             attempt,
             questions,
@@ -60,6 +56,13 @@ export const submitAttempt = async (req: AuthRequest, res: Response) => {
         if (!attempt) {
             return res.status(404).json({ message: 'Спробу не знайдено' });
         }
+
+        // ДОДАНО: Якщо спроба належить зареєстрованому юзеру, ніхто інший не може її завершити
+        if (attempt.user_id !== null && attempt.user_id !== req.user?.id) {
+            await trx.rollback();
+            return res.status(403).json({ message: 'Ви не маєте прав на збереження цієї спроби' });
+        }
+
         if (attempt.finished_at) {
             return res.status(400).json({ message: 'Ця спроба вже завершена' });
         }

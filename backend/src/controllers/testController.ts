@@ -133,8 +133,18 @@ export const getTestById = async (req: AuthRequest, res: Response) => {
 
         const questions = await db('questions').where({ test_id: test.id }).orderBy('position', 'asc');
 
+        // ДОДАНО: Виправлення N+1. Дістаємо всі варіанти одним запитом!
+        const questionIds = questions.map(q => q.id);
+        const allOptions = questionIds.length > 0
+            ? await db('options')
+                .whereIn('question_id', questionIds)
+                .select('id', 'question_id', 'content', 'position', 'is_correct')
+                .orderBy('position', 'asc')
+            : [];
+
         for (let q of questions) {
-            q.options = await db('options').where({ question_id: q.id }).orderBy('position', 'asc');
+            // Фільтруємо варіанти в пам'яті сервера (це в 100 разів швидше, ніж запити до БД)
+            q.options = allOptions.filter(opt => opt.question_id === q.id);
         }
 
         res.json({ ...test, questions });

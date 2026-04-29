@@ -21,6 +21,7 @@ interface AttemptResult {
 export default function Results() {
     const { attemptId } = useParams();
     const navigate = useNavigate();
+    const isLoggedIn = !!localStorage.getItem('token');
 
     const { data, isLoading, isError } = useQuery<AttemptResult>({
         queryKey: ['attemptResult', attemptId],
@@ -92,10 +93,10 @@ export default function Results() {
             {/* Кнопка на головну */}
             <div className="flex justify-center">
                 <button
-                    onClick={() => navigate('/tests')}
-                    className="bg-brand-green hover:bg-brand-green-hover text-white px-8 py-2.5 rounded-lg font-medium transition-colors"
+                    onClick={() => window.location.href = isLoggedIn ? '/tests' : '/login'}
+                    className="bg-brand-green hover:bg-brand-green-hover text-white px-6 py-2 rounded-lg font-medium"
                 >
-                    На головну
+                    {isLoggedIn ? 'Повернутися на головну' : 'Завершити та вийти'}
                 </button>
             </div>
         </div>

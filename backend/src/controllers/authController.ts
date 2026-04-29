@@ -9,6 +9,14 @@ export const register = async (req: Request, res: Response) => {
     try {
         const { email, password, first_name, last_name } = req.body;
 
+        // ДОДАНО: Базова валідація
+        if (!email || !password || !first_name || !last_name) {
+            return res.status(400).json({ message: 'Всі поля є обов\'язковими' });
+        }
+        if (password.length < 6) {
+            return res.status(400).json({ message: 'Пароль має містити щонайменше 6 символів' });
+        }
+
         // Перевірка, чи користувач вже існує
         const existingUser = await db('users').where({ email }).first();
         if (existingUser) {

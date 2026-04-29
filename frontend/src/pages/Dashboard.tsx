@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import Header from '../components/Header';
 import { Search } from 'lucide-react'; // ДОДАНО: іконка пошуку
@@ -16,7 +16,16 @@ interface Test {
 }
 
 export default function Dashboard() {
-    // ДОДАНО: Стан для пошукового запиту
+    const navigate = useNavigate();
+    const token = localStorage.getItem('token');
+
+    // 1. ДОДАНО: Негайний редирект для гостей ще до того, як щось відмалюється
+    useEffect(() => {
+        if (!token) {
+            navigate('/login');
+        }
+    }, [token, navigate]);
+
     const [searchQuery, setSearchQuery] = useState('');
 
     const { data: myTests, isLoading: isLoadingMy } = useQuery<Test[]>({
@@ -24,7 +33,8 @@ export default function Dashboard() {
         queryFn: async () => {
             const res = await apiClient.get('/tests/my');
             return res.data;
-        }
+        },
+        enabled: !!token // 2. ДОДАНО: Забороняємо React Query робити запит, якщо немає токена
     });
 
     const { data: publicTests, isLoading: isLoadingPublic } = useQuery<Test[]>({
@@ -32,8 +42,11 @@ export default function Dashboard() {
         queryFn: async () => {
             const res = await apiClient.get('/tests');
             return res.data;
-        }
+        },
+        enabled: !!token // 2. ДОДАНО: Забороняємо запит
     });
+
+    if (!token) return null;
 
     const isLoading = isLoadingMy || isLoadingPublic;
 

@@ -20,39 +20,35 @@ export default function TakeTest() {
     const { testId } = useParams();
     const navigate = useNavigate();
 
+    // Перевірка авторизації та стан гостя
+    const isLoggedIn = !!localStorage.getItem('token');
+    const [guestInfo, setGuestInfo] = useState({ firstName: '', lastName: '' });
+
+    // Основні стани тесту
     const [attemptId, setAttemptId] = useState<string | null>(null);
     const [questions, setQuestions] = useState<Question[]>([]);
     const [currentStep, setCurrentStep] = useState(0);
     const [answers, setAnswers] = useState<Record<string, string>>({});
 
-    // НОВЕ: Стан для таймера (в секундах)
+    // Стани для назви та таймера, отримані з бекенду
+    const [testTitle, setTestTitle] = useState<string>('');
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
-    const startTestMutation = useMutation({
-        mutationFn: async () => {
-            // Щоб отримати time_limit_sec, нам потрібно зробити додатковий запит за інформацією про тест
-            // (оскільки наш бекенд /attempts його не повертає)
-            const testInfoRes = await apiClient.get(`/tests`);
-            const currentTest = testInfoRes.data.find((t: any) => t.id === testId);
-
-            const res = await apiClient.post('/attempts', { test_id: testId });
-
-            return {
-                attemptData: res.data,
-                timeLimit: currentTest?.time_limit_sec || null
-            };
+    // Мутація початку тесту
+    const createAttemptMutation = useMutation({
+        mutationFn: async (data: { test_id: string, guest_first_name?: string, guest_last_name?: string }) => {
+            const res = await apiClient.post('/attempts', data);
+            return res.data;
         },
         onSuccess: (data) => {
-            setAttemptId(data.attemptData.attempt.id);
-            setQuestions(data.attemptData.questions);
-
-            // НОВЕ: Встановлюємо початковий час, якщо в тесті є ліміт
-            if (data.timeLimit) {
-                setTimeLeft(data.timeLimit);
-            }
+            setAttemptId(data.attempt.id);
+            setQuestions(data.questions);
+            if (data.test_title) setTestTitle(data.test_title);
+            if (data.time_limit_sec) setTimeLeft(data.time_limit_sec);
         }
     });
 
+    // Мутація завершення тесту
     const submitTestMutation = useMutation({
         mutationFn: async () => {
             const formattedAnswers = Object.entries(answers).map(([question_id, option_id]) => ({
@@ -68,29 +64,47 @@ export default function TakeTest() {
         }
     });
 
-    // НОВЕ: Ефект таймера
+    // Окремий чистий useEffect для роботи таймера
     useEffect(() => {
-        // Якщо таймер не встановлено, або час вийшов, або тест ще не почався — нічого не робимо
+        // Якщо таймера немає, або час вийшов, або спроба не створена — нічого не робимо
         if (timeLeft === null || timeLeft <= 0 || !attemptId) return;
 
-        // Запускаємо інтервал, який щосекунди віднімає 1
         const timerId = setInterval(() => {
             setTimeLeft((prev) => {
-                if (prev !== null && prev <= 1) {
-                    // ЧАС ВИЙШОВ! Очищаємо інтервал і автоматично відправляємо тест
+                if (prev === null || prev <= 1) {
                     clearInterval(timerId);
-                    submitTestMutation.mutate();
+                    // Якщо час вийшов - автоматично завершуємо тест
+                    if (!submitTestMutation.isPending) {
+                        submitTestMutation.mutate();
+                    }
                     return 0;
                 }
-                return prev !== null ? prev - 1 : null;
+                return prev - 1;
             });
         }, 1000);
 
-        // Очищення інтервалу при видаленні компонента з екрану
         return () => clearInterval(timerId);
     }, [timeLeft, attemptId, submitTestMutation]);
 
-    // НОВЕ: Функція для форматування секунд у вигляд ХХ:ХХ (наприклад, 09:32)
+    // Запуск гостем
+    const handleGuestStart = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!guestInfo.firstName.trim() || !guestInfo.lastName.trim()) {
+            alert("Будь ласка, введіть ім'я та прізвище");
+            return;
+        }
+        createAttemptMutation.mutate({
+            test_id: testId as string,
+            guest_first_name: guestInfo.firstName,
+            guest_last_name: guestInfo.lastName
+        });
+    };
+
+    // Запуск авторизованим користувачем
+    const handleUserStart = () => {
+        createAttemptMutation.mutate({ test_id: testId as string });
+    };
+
     const formatTime = (seconds: number) => {
         const m = Math.floor(seconds / 60).toString().padStart(2, '0');
         const s = (seconds % 60).toString().padStart(2, '0');
@@ -115,27 +129,66 @@ export default function TakeTest() {
         }
     };
 
+    // ЕКРАН 1: До початку тесту (спроба ще не створена)
     if (!attemptId) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh]">
-                <div className="bg-[#1e1e1e] border border-[#2a2a2a] p-8 rounded-xl max-w-md w-full text-center">
-                    <h2 className="text-2xl font-bold text-white mb-4">Готові розпочати?</h2>
-                    <p className="text-gray-400 mb-8">Час піде відразу після натискання кнопки.</p>
-                    <button
-                        onClick={() => startTestMutation.mutate()}
-                        disabled={startTestMutation.isPending}
-                        className="w-full bg-brand-green hover:bg-brand-green-hover text-white font-medium py-3 rounded-lg transition-colors"
-                    >
-                        {startTestMutation.isPending ? 'Завантаження...' : 'Почати тест'}
-                    </button>
-                </div>
+            <div className="flex flex-col items-center justify-center min-h-[60vh] px-4">
+                {isLoggedIn ? (
+                    // Форма для авторизованого
+                    <div className="bg-[#1e1e1e] border border-[#2a2a2a] p-8 rounded-xl max-w-md w-full text-center">
+                        <h2 className="text-2xl font-bold text-white mb-4">Готові розпочати?</h2>
+                        <p className="text-gray-400 mb-8">Час піде відразу після натискання кнопки.</p>
+                        <button
+                            onClick={handleUserStart}
+                            disabled={createAttemptMutation.isPending}
+                            className="w-full bg-brand-green hover:bg-brand-green-hover text-white font-medium py-3 rounded-lg transition-colors"
+                        >
+                            {createAttemptMutation.isPending ? 'Завантаження...' : 'Почати тест'}
+                        </button>
+                    </div>
+                ) : (
+                    // Форма для гостя
+                    <form onSubmit={handleGuestStart} className="bg-[#1e1e1e] border border-[#2a2a2a] p-8 rounded-xl max-w-md w-full">
+                        <h2 className="text-2xl font-bold text-white mb-6 text-center">Представтеся</h2>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-1">Ваше ім'я</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={guestInfo.firstName}
+                                    onChange={e => setGuestInfo({...guestInfo, firstName: e.target.value})}
+                                    className="w-full bg-[#151515] border border-[#333] rounded-lg px-4 py-2 text-white focus:border-brand-green outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm text-gray-400 mb-1">Ваше прізвище</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={guestInfo.lastName}
+                                    onChange={e => setGuestInfo({...guestInfo, lastName: e.target.value})}
+                                    className="w-full bg-[#151515] border border-[#333] rounded-lg px-4 py-2 text-white focus:border-brand-green outline-none"
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={createAttemptMutation.isPending}
+                                className="w-full bg-brand-green hover:bg-brand-green-hover text-white font-medium py-3 rounded-lg transition-colors mt-4"
+                            >
+                                {createAttemptMutation.isPending ? 'Завантаження...' : 'Розпочати тест'}
+                            </button>
+                        </div>
+                    </form>
+                )}
             </div>
         );
     }
 
+    // ЕКРАН 2: Тест порожній
     if (questions.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh]">
+            <div className="flex flex-col items-center justify-center min-h-[60vh] px-4">
                 <div className="bg-[#1e1e1e] border border-[#2a2a2a] p-8 rounded-xl max-w-md w-full text-center">
                     <h2 className="text-2xl font-bold text-white mb-4">Упс, цей тест порожній 🪹</h2>
                     <p className="text-gray-400 mb-8">Автор ще не додав жодного запитання до цього тесту.</p>
@@ -150,38 +203,36 @@ export default function TakeTest() {
         );
     }
 
+    // ЕКРАН 3: Проходження тесту
     const currentQuestion = questions[currentStep];
     const progressPercentage = ((currentStep + 1) / questions.length) * 100;
     const isLastQuestion = currentStep === questions.length - 1;
-
-    // НОВЕ: Змінюємо колір таймера, якщо залишилося менше 1 хвилини (щоб попередити користувача)
     const isTimeRunningOut = timeLeft !== null && timeLeft <= 60;
 
     return (
-        <div className="max-w-3xl mx-auto py-6">
+        <div className="max-w-3xl mx-auto py-6 px-4">
             <div className="flex items-center justify-between mb-8">
                 <Link to="/tests" className="text-xl font-bold text-white hover:opacity-80 transition-opacity block">
                     навч<span className="text-brand-green">тести</span>
                 </Link>
 
-                {/* НОВЕ: Динамічний рендер таймера */}
                 {timeLeft !== null && (
-                    <div className={`font-bold px-4 py-1.5 rounded-full text-sm transition-colors ${
+                    <div className={`font-bold px-4 py-1.5 rounded-full text-sm transition-colors shadow-sm ${
                         isTimeRunningOut
-                            ? 'bg-red-500/20 text-red-400 border border-red-500/50' // Червоний, якщо < 1 хв
-                            : 'bg-[#facc15]/20 text-[#facc15] border border-[#facc15]/50' // Жовтий в іншому випадку
+                            ? 'bg-red-500/20 text-red-400 border border-red-500/50 animate-pulse'
+                            : 'bg-[#facc15]/20 text-[#facc15] border border-[#facc15]/50'
                     }`}>
                         {formatTime(timeLeft)}
                     </div>
                 )}
             </div>
 
-            <div className="bg-[#1e1e1e] border border-[#2a2a2a] rounded-xl p-8 shadow-xl">
-                <div className="flex justify-between items-end mb-4">
-                    <h1 className="text-xl text-white font-medium">Проходження тесту</h1>
+            <div className="bg-[#1e1e1e] border border-[#2a2a2a] rounded-xl p-6 md:p-8 shadow-xl">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-end mb-4 gap-2">
+                    <h1 className="text-xl text-white font-medium">{testTitle || 'Проходження тесту'}</h1>
                     <span className="text-sm text-gray-400">
-            Запитання {currentStep + 1} з {questions.length}
-          </span>
+                        Запитання {currentStep + 1} з {questions.length}
+                    </span>
                 </div>
 
                 <div className="w-full bg-[#2a2a2a] h-1.5 rounded-full mb-8 overflow-hidden">
@@ -217,19 +268,19 @@ export default function TakeTest() {
                                     </div>
 
                                     <span className={`text-base ${isSelected ? 'text-brand-green font-medium' : 'text-gray-300'}`}>
-                    {option.content}
-                  </span>
+                                        {option.content}
+                                    </span>
                                 </button>
                             );
                         })}
                     </div>
                 </div>
 
-                <div className="flex justify-between items-center mt-10">
+                <div className="flex justify-between items-center mt-10 gap-4">
                     <button
                         onClick={handlePrev}
                         disabled={currentStep === 0}
-                        className="px-6 py-2 border border-[#333] text-gray-300 rounded-lg hover:bg-[#2a2a2a] hover:text-white transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                        className="px-4 sm:px-6 py-2 border border-[#333] text-gray-300 rounded-lg hover:bg-[#2a2a2a] hover:text-white transition-colors disabled:opacity-30 disabled:pointer-events-none"
                     >
                         &larr; Назад
                     </button>
@@ -238,14 +289,14 @@ export default function TakeTest() {
                         <button
                             onClick={handleSubmit}
                             disabled={submitTestMutation.isPending}
-                            className="bg-brand-green hover:bg-brand-green-hover text-white px-8 py-2 rounded-lg font-medium transition-colors"
+                            className="bg-brand-green hover:bg-brand-green-hover text-white px-6 sm:px-8 py-2 rounded-lg font-medium transition-colors whitespace-nowrap"
                         >
                             {submitTestMutation.isPending ? 'Обробка...' : 'Завершити тест'}
                         </button>
                     ) : (
                         <button
                             onClick={handleNext}
-                            className="bg-brand-green hover:bg-brand-green-hover text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                            className="bg-brand-green hover:bg-brand-green-hover text-white px-4 sm:px-6 py-2 rounded-lg font-medium transition-colors whitespace-nowrap"
                         >
                             Наступне &rarr;
                         </button>

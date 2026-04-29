@@ -1,21 +1,19 @@
-# Використовуємо ту саму версію Node.js, що й для бекенду
-FROM node:22-alpine
-
-# Встановлюємо робочу директорію
+# Етап 1: Збірка проекту
+FROM node:22-alpine AS builder
 WORKDIR /app
-
-# Копіюємо файли залежностей
 COPY package*.json ./
-
-# Встановлюємо залежності
 RUN npm install
-
-# Копіюємо весь інший код проекту
 COPY . .
+RUN npm run build
 
-# Відкриваємо порт, який використовує Vite
-EXPOSE 5173
+# Етап 2: Production сервер (роздача зібраної статики)
+FROM nginx:alpine
 
-# Запускаємо сервер Vite.
-# ПРАПОРЕЦЬ --host КРИТИЧНО ВАЖЛИВИЙ, щоб сервер був доступний для Nginx!
-CMD ["npm", "run", "dev", "--", "--host"]
+# ДОДАНО: Копіюємо конфігурацію для React Router
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Копіюємо зібрані файли з першого етапу в директорію Nginx
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
